@@ -1,17 +1,15 @@
-import defaultShell from "default-shell"
 import * as diff from "diff"
-import { execa } from "execa"
 import fs from "fs/promises"
-import { globby } from "globby"
-import osName from "os-name"
 import Anthropic from "@anthropic-ai/sdk"
+import { globby } from "globby"
+import {execa} from "execa"
 
 import { Tool, ToolName } from "./type/Tool"
 import { AnthropicHandler } from "./claude"
 import { ClaudeAskResponse } from "./type/WebviewMessage"
-import { TeachCodeAskResponse, TeachCodeQuestion, TeachCodeRequestResult } from "./type/TeachCodeMessage"
+import { ClaudeAsk, ClaudeMessage, ClaudeSay, TeachCodeAskResponse, TeachCodeQuestion, TeachCodeRequestResult } from "./type/TeachCodeMessage"
 import path from "path"
-import { uuid } from "./util"
+import { detectDefaultShell, uuid, osName } from "./util"
 import { TextBlockParam } from "@anthropic-ai/sdk/resources/messages"
 
 const SYSTEM_PROMPT = (workingDirectory: string) => {
@@ -67,7 +65,7 @@ You accomplish a given task iteratively, breaking it down into clear steps and w
 SYSTEM INFORMATION
 
 Operating System: ${osName()}
-Default Shell: ${defaultShell}
+Default Shell: ${detectDefaultShell()}
 `
 }
 
@@ -84,6 +82,7 @@ CAPABILITIES
 RULES
 
 - User would give you a line of code and you should answer the intent of that code.
+- Please write the content in just one line.
 [ example ]
 1. user send code below which is written in javascript
 <user> users.map((u) => u.name)
@@ -206,22 +205,44 @@ export class TeachCode {
     private apiHandler: AnthropicHandler
 	private workingDirectory: string
 	private systemPrompt: string
-	private saySocket: (content: string) => void
-	private askSocket: (content: string, askType: string) => Promise<TeachCodeAskResponse>
+	private saySocket: (content: string, sayType: ClaudeSay) => void
+	private askSocket: (content: string, askType: ClaudeAsk) => Promise<TeachCodeAskResponse>
+	private sendState: (messages: ClaudeMessage[]) => void
 	private history: Anthropic.MessageParam[]
 	private requestCount: number
 	askResponse?: ClaudeAskResponse
 	askResponseText?: string
 	questionMap: {[key: string]: TeachCodeQuestion}
+	claudeMessages?: ClaudeMessage[]
 	constructor(
 		workingDirectory: string,
-		saySocket: (content: string) => void,
-		askSocket: (content: string, askType: string) => Promise<TeachCodeAskResponse>
+		saySocket: (content: string, sayType: ClaudeSay) => void,
+		askSocket: (content: string, askType: ClaudeAsk) => Promise<TeachCodeAskResponse>,
+		sendState: (messages: ClaudeMessage[]) => void
 	) {
 		this.workingDirectory = workingDirectory
 		this.apiHandler = new AnthropicHandler(tools)
-		this.saySocket = saySocket
-		this.askSocket = askSocket
+		this.sendState = sendState
+		this.saySocket = (content: string, sayType: ClaudeSay) => {
+			this.addClaudeMessage({
+				time: Date.now(),
+				type: "say",
+				say: sayType,
+				text: content
+			})
+			sendState(this.claudeMessages || [])
+			saySocket(content, sayType)
+		}
+		this.askSocket = (content: string, askType: ClaudeAsk) => {
+			this.addClaudeMessage({
+				time: Date.now(),
+				type: "ask",
+				ask: askType,
+				text: content
+			})
+			sendState(this.claudeMessages || [])
+			return askSocket(content, askType)
+		}
 		this.history = []
 		this.requestCount = 0
 		this.systemPrompt = SYSTEM_PROMPT(this.workingDirectory)
@@ -270,20 +291,21 @@ export class TeachCode {
 				const selectedAddedLines = diffAddedLines.slice(0, diffQuestionCount)
 				const newFileLines = newContent.split("\n")
 				let codeLine = 0
-				const maskedNewFile = newFileLines.map(async (nfl) => {
+				const promises = newFileLines.map(async (nfl) => {
 					codeLine += 1
 					if (!selectedAddedLines.includes(nfl)) return nfl
+					if (nfl === "") return nfl
 					let intent = ""
 					try {
 						const response = await this.apiHandler.createIntentMessage(QUESTION_SYSTEM_PROMPT, nfl)
-						intent = response.content.join(", ")
+						intent = response.content.map((c) => c.type === "text" ? c.text : "").join(", ")
 					} catch (e) {
 						console.error(e)
 						return nfl
 					}
 					const questionId = uuid()
 					const comment = isCommentSharp ? "#" : "//"
-					const codeComment = ` <do not edit> marked as questionId ${questionId}`
+					const codeComment = ` <do not edit> questionId @ ${questionId}`
 					const questionCode = "-".repeat(nfl.length)
 					const maskedLine =
 						comment + intent + " | " + codeComment + "\n" +
@@ -297,43 +319,48 @@ export class TeachCode {
 						answerCode: nfl
 					}
 					return maskedLine
-				}).join(("\n"))
+				})
+				const maskedNewFile = (await Promise.all(promises)).join(("\n"))
 				const maskedDiffRepresentation = diffRepresentation
 					.split("\n")
 					.map((d) => {
 						if (!selectedAddedLines.includes(d.slice(0))) return d
 						return "+" + "-".repeat(d.length - 1)
 					}).join("\n")
-				const askWriteFileContent = `Write to file ${filePath}
-diff : ${maskedDiffRepresentation}`
-				const { askResponse } = await this.askSocket(askWriteFileContent, "tool")
+				const askWriteFileContent = {
+					tool: "editFile",
+					filePath,
+					diff: maskedDiffRepresentation
+				}
+				this.saySocket("Masked file is written", "text")
+				await fs.writeFile(filePath, maskedNewFile)
+				const { askResponse } = await this.askSocket(JSON.stringify(askWriteFileContent), "tool")
 				if (askResponse !== "yesButtonClicked") {
 					return "The user denied this operation"
 				}
-				await fs.writeFile(filePath, maskedNewFile)
+				await fs.writeFile(filePath, newContent)
 				return `Changed applied to ${filePath}: \n ${diffResult}`
 			} else {
 				let codeLine = 0
-				const splitNewContent = newContent.split("\n")
+				const splitNewContent = newContent.split("\n").filter((l) => l.trim() !== "")
 				const diffQuestionCount = Math.ceil(splitNewContent.length / 5)
 				splitNewContent.sort(() => 0.5 - Math.random())
 				const selectedMaskedLine = splitNewContent.slice(0, diffQuestionCount)
-				const maskedNewFile = newContent
-					.split("\n")
+				const promises = newContent.split("\n")
 					.map( async (nfl) => {
 						codeLine += 1
-						if (selectedMaskedLine.includes(nfl)) return
+						if (!selectedMaskedLine.includes(nfl)) return nfl
 						let intent = ""
 						try {
 							const response = await this.apiHandler.createIntentMessage(QUESTION_SYSTEM_PROMPT, nfl)
-							intent = response.content.join(", ")
+							intent = response.content.map((c) => c.type === "text" ? c.text : "").join(", ")
 						} catch (e) {
 							console.error(e)
 							return nfl
 						}
 						const questionId = uuid()
 						const comment = isCommentSharp ? "#" : "//"
-						const codeComment = ` <do not edit> marked as questionId ${questionId}`
+						const codeComment = ` <do not edit> questionId @ ${questionId}`
 						const questionCode = "-".repeat(nfl.length)
 						const maskedLine =
 							comment + intent + " | " + codeComment + "\n" +
@@ -347,28 +374,40 @@ diff : ${maskedDiffRepresentation}`
 							answerCode: nfl
 						}
 						return maskedLine
-					}).join("\n")
-				const askNewFileContent = `New to file ${filePath}
-content : ${maskedNewFile}`
-				const { askResponse } = await this.askSocket(askNewFileContent, "tool")
+					})
+				const maskedNewFile = (await Promise.all(promises)).join("\n")
+				const askNewFileContent = {
+					tool: "newFile",
+					filePath,
+					content : maskedNewFile
+				}
+				this.saySocket("Masked file is written", "text")
+				await fs.mkdir(path.dirname(filePath), {recursive: true})
+				await fs.writeFile(filePath, maskedNewFile)
+				const { askResponse } = await this.askSocket(JSON.stringify(askNewFileContent), "tool")
 				if (askResponse !== "yesButtonClicked") {
 					return "The user denied this operation"
 				}
 				await fs.mkdir(path.dirname(filePath), {recursive: true})
-				await fs.writeFile(filePath, maskedNewFile)
+				await fs.writeFile(filePath, newContent)
 				return `New file created and content written to ${filePath}`
 			}
 		} catch (e) {
 			console.error(e)
 			const errorMessage = `Error writing file ${filePath} : ${JSON.stringify(e)}`
-			this.saySocket(errorMessage)
+			this.saySocket(JSON.stringify({error: errorMessage}), "error")
 			return errorMessage
 		}
 	}
 	async readFile(filePath: string): Promise<string> {
 		try {
 			const content = await fs.readFile(filePath, "utf-8")
-			const { askResponse } = await this.askSocket(`Share readFile result : "${content.slice(0, 100)}..."`, "tool")
+			const readFileResult = {
+				tool: "readFile",
+				filePath,
+				content: `${content.slice(0, 100)}`
+			}
+			const { askResponse } = await this.askSocket(JSON.stringify(readFileResult), "tool")
 			if (askResponse !== "yesButtonClicked") {
 				return "The user denied this operation"
 			}
@@ -376,7 +415,7 @@ content : ${maskedNewFile}`
 		} catch (error) {
 			console.error(error)
 			const errorMessage = `Error reading file ${filePath} : ${JSON.stringify(error)}`
-			this.saySocket(JSON.stringify({error: errorMessage}))
+			this.saySocket(JSON.stringify({error: errorMessage}), "error")
 			return errorMessage
 		}
 	}
@@ -388,7 +427,7 @@ content : ${maskedNewFile}`
 			const sayIsRoot = JSON.stringify({
 				"text": "listFiles for root is not allowed."
 			})
-			this.saySocket(sayIsRoot)
+			this.saySocket(sayIsRoot, "text")
 			return root
 		}
 		try {
@@ -401,7 +440,12 @@ content : ${maskedNewFile}`
 			}
 			const entries = await globby("*", options)
 			const result = entries.join("\n")
-			const { askResponse, text } = await this.askSocket(`Share listFileResult for ${dirPath}`, "tool")
+			const listFileResult = {
+				type: "listFile",
+				dirPath,
+				content: result
+			}
+			const { askResponse, text } = await this.askSocket(JSON.stringify(listFileResult), "tool")
 			if (askResponse !== "yesButtonClicked") {
 				return "The user denied this operation."
 			}
@@ -409,18 +453,21 @@ content : ${maskedNewFile}`
 		} catch (e) {
 			console.error(e)
 			const errorMessage = `Error when listFiles for ${dirPath} : ${JSON.stringify(e)}`
-			this.saySocket(JSON.stringify({error: errorMessage}))
+			this.saySocket(JSON.stringify({error: errorMessage}), "error")
 			return errorMessage
 		}
 	}
 	async executeCommand(command: string, returnEmptyStringOnSuccess: boolean = false) {
-		const askCommandRequest = `LLM wants to command ${command}. Will you allow this command?`
-		const { askResponse, text } = await this.askSocket(askCommandRequest, "command")
+		const askCommandRequest = {
+			type: "executeCommand",
+			command
+		}
+		const { askResponse, text } = await this.askSocket(JSON.stringify(askCommandRequest), "command")
 		if (askResponse !== "yesButtonClicked") {
 			const sayNoButtonClicked = JSON.stringify({
 				"text": `the user denied command "${command}"`
 			})
-			this.saySocket(sayNoButtonClicked)
+			this.saySocket(sayNoButtonClicked, "text")
 			return "The user denied this operation"
 		}
 		try {
@@ -428,9 +475,9 @@ content : ${maskedNewFile}`
 			const currentDirCommand = `cd ${this.workingDirectory}; ${command}`
 			for await (let line of execa({shell: true})`${currentDirCommand}`) {
 				const sayExecResult = JSON.stringify({
-					"text": `command_output : "${line}"`
+					"command_output": `command_output : "${line}"`
 				})
-				this.saySocket(sayExecResult)
+				this.saySocket(sayExecResult, "command_output")
 				result += `${line}\n`
 			}
 			if (returnEmptyStringOnSuccess) return ""
@@ -439,29 +486,39 @@ content : ${maskedNewFile}`
 			console.error(e)
 			const errorMessage = (e as any).message || `Error occured at ${command}`
 			const sayErrorMessage = `Error executing command "${command}" : ${errorMessage}`
-			this.saySocket(JSON.stringify({error: sayErrorMessage}))
+			this.saySocket(JSON.stringify({error: sayErrorMessage}), "error")
 			return errorMessage
 		}
 	}
 	async askFollowupQuestion(question: string): Promise<string> {
-		const { text } = await this.askSocket(question, "followup")
+		const followupResult = {
+			type: "followup",
+			question
+		}
+		const { text } = await this.askSocket(JSON.stringify(followupResult), "followup")
 		return `User's response:\n "${text}"`
 	}
 	async attemptCompletion(result: string, command?: string): Promise<string> {
 		let resultToSend = result
 		if (command) {
 			const sayAttemptCompletionResult = `Attempt Completion Result : ${result}`
-			await this.saySocket(sayAttemptCompletionResult)
+			await this.saySocket(JSON.stringify({completion_result: sayAttemptCompletionResult}), "completion_result")
 			const commandResult = await this.executeCommand(command, true)
 			if (commandResult) return commandResult
 			resultToSend = ""
 		}
-		const { askResponse, text } = await this.askSocket(resultToSend, "completion_result")
+		const attemptCompletionResult = {
+			type: "attempt_result",
+			result: resultToSend
+		}
+		const { askResponse, text } = await this.askSocket(JSON.stringify(attemptCompletionResult), "completion_result")
 		if (askResponse === "yesButtonClicked") return ""
 		return `The User is not pleased with the results. Use the feedback they provided to successfully complete the task, and then attempt completion again.\nUser's feedback:\n\"${text}\"`
 	}
-	private async startTask(task: string): Promise<void> {
-		this.saySocket(JSON.stringify({text: `Starting task "${task}"...`}))
+	async startTask(task: string): Promise<void> {
+		this.setClaudeMessages([])
+		this.sendState(this.claudeMessages || [])
+		this.saySocket(JSON.stringify({task: `Starting task "${task}"...`}), "task")
 		let userPrompt = `Task: \"${task}\"`
 		let totalInputTokens = 0
 		let totalOutputTokens = 0
@@ -475,6 +532,10 @@ content : ${maskedNewFile}`
 			else userPrompt = `Ask yourself if you have completed the user's task. If you have, use the attempt_completion tool, otherwise proceed to the next step. (This is an automated message, so do not respond to it conversationally. Just proceed with the task.)`
 		}
 	}
+	async clearTask() {
+		this.claudeMessages = undefined
+		this.history = []
+	}
 	async recursivelyMakeClaudeRequests(
 		userContent: Array<
 			Anthropic.TextBlockParam |
@@ -482,6 +543,7 @@ content : ${maskedNewFile}`
 			Anthropic.ToolResultBlockParam
 		>
 	): Promise<TeachCodeRequestResult> {
+		this.history.push({role: "user", content: userContent})
 		if (this.requestCount > MAX_REQUEST_COUNT_PER_TASK) {
 			const response = await this.askSocket(
 				"Reached the maximum number of requests for this task. Would you like to reset the count and allow him to proceed?",
@@ -505,7 +567,7 @@ content : ${maskedNewFile}`
 		const sayReqStartContent = JSON.stringify({
 			"text": `Request of Task "${userContent.map((u) => (u as TextBlockParam).text).join(", \n")}" started...`
 		})
-		this.saySocket(sayReqStartContent)
+		this.saySocket(sayReqStartContent, "text")
 		try {
 			const response = await this.apiHandler.createMessage(this.systemPrompt, this.history)
 			this.requestCount += 1
@@ -515,7 +577,7 @@ content : ${maskedNewFile}`
 			const sayTokenCount = JSON.stringify({
 				"text": `Input Token Count : ${inputTokenCount} / Output Token Count : ${outputTokenCount}`
 			})
-			this.saySocket(sayTokenCount)
+			this.saySocket(sayTokenCount, "text")
 			//
 			for (let contentBlock of response.content) {
 				if (contentBlock.type !== "text") continue
@@ -523,7 +585,7 @@ content : ${maskedNewFile}`
 				const sayAssistantResponse = JSON.stringify({
 					"text": contentBlock.text
 				})
-				this.saySocket(sayAssistantResponse)
+				this.saySocket(sayAssistantResponse, "text")
 			}
 			//
 			let toolResults: Anthropic.ToolResultBlockParam[] = []
@@ -539,16 +601,18 @@ content : ${maskedNewFile}`
 				} else {
 					const result = await this.executeTool(toolName, toolInput)
 					const sayExecuteTool = JSON.stringify({
-						text: `Tool Used ${toolName}, Tool Input: ${JSON.stringify(toolInput)}, Tool Result: ${result}`
+						command_output: `Tool Used ${toolName}, \nTool Input: ${JSON.stringify(toolInput)}, \n Tool Result: \n${result}`
 					})
-					this.saySocket(sayExecuteTool)
+					this.saySocket(sayExecuteTool, "command_output")
 					toolResults.push({type: "tool_result", tool_use_id: toolUseId, content: result})
 				}
 			}
 			if (assistantResponses.length) {
 				this.history.push({role: "assistant", content: assistantResponses})
 			} else {
-				this.saySocket("Unexpected Error! No assistant messaged were found in the API response")
+				this.saySocket(JSON.stringify({
+					error: "Unexpected Error! No assistant messaged were found in the API response"
+				}), "error")
 				this.history.push({role: "assistant", content: [
 					{type: "text", text: "Failure: I did not have a response to provide."}
 				]})
@@ -588,6 +652,25 @@ content : ${maskedNewFile}`
 			console.error(e)
 			return { didEndLoop: true, inputTokenCount: 0, outputTokenCount: 0 }
 		}
+	}
+	getClaudeMessages() {
+		return this.claudeMessages
+	}
+	setClaudeMessages(messages: ClaudeMessage[]) {
+		this.claudeMessages = messages
+	}
+	addClaudeMessage(message: ClaudeMessage) {
+		if (!this.claudeMessages) this.claudeMessages = []
+		this.claudeMessages.push(message)
+		return this.claudeMessages
+	}
+	showAnswer(questionId: string) {
+		const answer = this.questionMap[questionId]
+		if (!answer) return ""
+		const sayAnswer = {
+			answer
+		}
+		this.saySocket(JSON.stringify(sayAnswer), "show_answer")
 	}
 	handleWebViewAskResponse(askResponse: ClaudeAskResponse, text?: string) {
 		this.askResponse = askResponse

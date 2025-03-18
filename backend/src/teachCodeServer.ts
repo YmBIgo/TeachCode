@@ -1,11 +1,11 @@
-import Websocket from "ws";
+import { WebSocketServer } from "ws";
 import { TeachCode } from "./teachCode";
 import readline from "readline";
 import { stdin, stdout } from "process";
 import fs from "fs/promises"
 import pWaitFor from "p-wait-for";
 import { ClaudeAskResponse, WebviewMessageType } from "./type/WebviewMessage";
-import { TeachCodeAskResponse } from "./type/TeachCodeMessage";
+import { ClaudeAsk, ClaudeMessage, ClaudeSay, TeachCodeAskResponse } from "./type/TeachCodeMessage";
 
 const rl = readline.createInterface({ input: stdin, output: stdout });
 rl.question("Please Input working directory you want...", async (answer) => {
@@ -21,17 +21,18 @@ rl.question("Please Input working directory you want...", async (answer) => {
 })
 
 function createServer(workingDirectory: string) {
-  const server = new Websocket.Server({ port: 8080 });
+  const server = new WebSocketServer({ port: 8081 });
   server.on("connection", (socket) => {
     console.log("Connected With Client...");
-    async function say(content: string): Promise<void> {
+    async function say(content: string, sayType: ClaudeSay): Promise<void> {
         const sayContentJson = JSON.stringify({
             type: "say",
-            content
+            content,
+            sayType
         })
         socket.send(sayContentJson)
     }
-    async function ask(content: string, askType: string): Promise<TeachCodeAskResponse> {
+    async function ask(content: string, askType: ClaudeAsk): Promise<TeachCodeAskResponse> {
         const askContentJson = JSON.stringify({
             type: "ask",
             askType,
@@ -46,7 +47,14 @@ function createServer(workingDirectory: string) {
         teachCode.clearWebViewAskResponse()
         return response as TeachCodeAskResponse
     }
-    const teachCode = new TeachCode(workingDirectory, say, ask);
+    function sendState(messages: ClaudeMessage[]) {
+        const stateJson = JSON.stringify({
+            type: "state",
+            messages
+        })
+        socket.send(stateJson)
+    }
+    let teachCode = new TeachCode(workingDirectory, say, ask, sendState);
     socket.on('message', (message) => {
         try {
             const messageJSON = JSON.parse(message.toString())
@@ -59,10 +67,18 @@ function createServer(workingDirectory: string) {
                     teachCode.handleWebViewAskResponse(askResponse, text)
                     break
                 case "newTask":
+                    teachCode.clearTask()
+                    const taskText = messageJSON.text
+                    teachCode.startTask(taskText)
                     break
                 case "clearTask":
+                    teachCode.clearTask()
                     break
                 case "showAnswer":
+                    const questionId = messageJSON.questionId
+                    if (typeof questionId == "string") {
+                        teachCode.showAnswer(questionId)
+                    }
                     break
                 default:
                     break
