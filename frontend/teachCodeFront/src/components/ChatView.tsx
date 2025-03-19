@@ -159,28 +159,39 @@ const ChatView: React.FC<Props> = ({
                     return <ChatRow message={message} />
                 })}
             </Box>
-            <Box>
+            <Box sx={{
+                position: "absolute",
+                bottom: "10px",
+                left: "0px",
+                zIndex: "100",
+                backgroundColor: "gray"
+            }}>
                 <TextareaAutosize
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleOnKeyDown}
                     disabled={textAreaDisabled}
                     style={{
-                        width: "250px"
+                        width: "290px"
                     }}
+                    minRows={3}
                 />
                 <Box sx={{display: "flex", justifyContent: "space-between"}}>
                     <Button
                         disabled={!secondaryButtonText}
                         onClick={handleSecondaryButtonClick}
+                        variant="contained"
+                        color="inherit"
                     >
-                        {secondaryButtonText}
+                        {secondaryButtonText || "　"}
                     </Button>
                     <Button
                         disabled={!primaryButtonText}
                         onClick={handlePrimaryButtonClick}
+                        variant="contained"
+                        color="primary"
                     >
-                        {primaryButtonText}
+                        {primaryButtonText || "　"}
                     </Button>
                 </Box>
             </Box>

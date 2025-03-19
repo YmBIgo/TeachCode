@@ -11,6 +11,7 @@ const rl = readline.createInterface({ input: stdin, output: stdout });
 rl.question("Please Input working directory you want...", async (answer) => {
     try {
         const isExist = await fs.stat(answer)
+        console.log(`Specified file path @${answer}`)
     } catch (e) {
         console.log("Working Directory specified is not exists...")
         rl.close()

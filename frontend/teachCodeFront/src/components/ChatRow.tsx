@@ -223,7 +223,7 @@ const ChatRow: React.FC<Props> = ({ message }) => {
                 backgroundColor: "white",
               }}
             >
-              {parsedMessageText()?.command_output}
+              {parsedMessageText()?.command_output.slice(0, 100)}
             </Box>
           );
         case "completion_result":
