@@ -240,7 +240,7 @@ const MAX_REQUEST_COUNT_PER_TASK = 20;
 const COMMENT_SHARP_LANGUAGE = ["rb", "py", "r", "pl"];
 const HTML_LANGUAGE = ["html"];
 const CSS_LANGUAGE = ["css"];
-const MAX_QUESTION_COUNT = 15; // its too small should consider batch send
+const MAX_QUESTION_COUNT = 10; // its too small should consider batch send
 
 export class TeachCode {
   private apiHandler: AnthropicHandler;
@@ -479,7 +479,7 @@ ${fixedFile}`;
           codeLine += 1;
           if (!selectedMaskedLine.includes(nfl)) return nfl;
 		  if (nfl === "") return nfl
-		  if (uniqNflArray.includes(nfl)) return
+		  if (uniqNflArray.includes(nfl)) return nfl
 		  uniqNflArray.push(nfl)
           let intent = "";
           try {

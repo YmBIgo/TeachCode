@@ -96,7 +96,7 @@ const ChatView: React.FC<Props> = ({
                         case "tool":
                             setTextAreaDisabled(false)
                             setClaudeAsk("tool")
-                            setPrimaryButtonText("Approve")
+                            setPrimaryButtonText("Check Accuracy")
                             setSecondaryButtonText("Reject")
                             break
                         case "followup":
@@ -143,18 +143,54 @@ const ChatView: React.FC<Props> = ({
         <Box
             sx={{
                 width: "300px",
-                height: "100vh",
+                height: "calc(100vh - 190px)",
                 backgroundColor: "gray",
                 overflow: "scroll"
             }}
             id="container"
         >
-            {task &&
-                <Box>
+            {task ?
+                <Box sx={{
+                    border: "3px solid blue",
+                    backgroundColor: "white",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    position: "absolute",
+                    top: "10px",
+                    left: "0px",
+                    width: "270px"
+                }}>
+                    <p style={{
+                        color: "white",
+                        backgroundColor: "blue",
+                        margin: "5px",
+                        padding: "5px 10px",
+                        borderRadius: "10px"
+                    }}>
+                        Your Current Task
+                    </p>
                     Your current task is "{task.text}"
                 </Box>
-            }
-            <Box id="messages">
+            : (
+                <Box sx={{
+                    border: "3px solid blue",
+                    backgroundColor: "white",
+                    padding: "10px",
+                    borderRadius: "10px",
+                    position: "absolute",
+                    top: "10px",
+                    left: "0px",
+                    width: "270px"
+                }}>
+                    <p>Let's start your task!</p>
+                </Box>
+            )}
+            <Box
+                id="messages"
+                sx={{
+                    marginTop: "170px"
+                }}
+            >
                 {messages.map((message) => {
                     return <ChatRow message={message} />
                 })}
