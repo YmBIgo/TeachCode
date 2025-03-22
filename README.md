@@ -4,9 +4,9 @@ Cline like coding assistant ***Web app*** which not only coding but also teachin
 
 ## Description
 Coding assistant tools are recently growing fast and many people are attracted with these tools.
-However there are also concerns that these tools would prevent junior engineers grow there abilities to code.  
+However there are also concerns that these tools would prevent junior engineers grow their abilities to code.  
   
-Since I created the tool named TeachCode which not only use Claude to code but also teach user how to code by hiding recommended code offered by Claude.  
+Therefore I created the tool named TeachCode which not only use Claude to code but also teach user how to code by hiding recommended code offered by Claude.  
 [![TeachCode Demo](https://vulnhuntr.s3.us-west-1.amazonaws.com/TeachCode_Demo_image)](https://www.youtube.com/watch?v=WYd3rszVSZk)
   
 Usage is simple.  
