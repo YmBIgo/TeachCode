@@ -6,7 +6,6 @@ type Props = {
 };
 
 const ChatRow: React.FC<Props> = ({ message }) => {
-  const messageAsk = message.ask ? message.ask : "";
   // const messageSay = message.say ? message.say : ""
   const parsedMessageText = () => {
     try {
@@ -34,8 +33,8 @@ const ChatRow: React.FC<Props> = ({ message }) => {
               <pre>{parsedMessageText()?.command}</pre>
             </Box>
           );
-        case "tool":
-          switch (parsedMessageText()?.[`${messageAsk}`]) {
+        case "check_accuracy":
+          switch (parsedMessageText()?.tool) {
             case "editFile":
               return (
                 <Box
@@ -68,6 +67,22 @@ const ChatRow: React.FC<Props> = ({ message }) => {
                   <pre>{parsedMessageText()?.content}</pre>
                 </Box>
               );
+            default:
+              return (
+                <Box
+                  sx={{
+                    padding: "10px",
+                    border: "1px solid black",
+                    margin: "10px",
+                    backgroundColor: "white",
+                  }}
+                >
+                  received unknown message...
+                </Box>
+              );
+          }
+        case "tool":
+          switch (parsedMessageText()?.tool) {
             case "readFile":
               return (
                 <Box
@@ -114,7 +129,6 @@ const ChatRow: React.FC<Props> = ({ message }) => {
                 </Box>
               );
           }
-          break;
         case "completion_result":
           return (
             <Box

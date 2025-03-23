@@ -50,10 +50,12 @@ const ChatView: React.FC<Props> = ({
         switch(claudeAsk){
             case "command":
             case "tool":
+            case "check_accuracy":
                 wsRef.current?.send(JSON.stringify(yesButtonClickedResponse))
                 break
             case "completion_result":
                 clearAllTask()
+                handleSendMessage()
                 break
         }
         setTextAreaDisabled(true)
@@ -93,10 +95,16 @@ const ChatView: React.FC<Props> = ({
                             setPrimaryButtonText("Run Command")
                             setSecondaryButtonText("Reject")
                             break
+                        case "check_accuracy":
+                            setTextAreaDisabled(false)
+                            setClaudeAsk("check_accuracy")
+                            setPrimaryButtonText("Check Accuracy")
+                            setSecondaryButtonText("Reject")
+                            break
                         case "tool":
                             setTextAreaDisabled(false)
                             setClaudeAsk("tool")
-                            setPrimaryButtonText("Check Accuracy")
+                            setPrimaryButtonText("Approve")
                             setSecondaryButtonText("Reject")
                             break
                         case "followup":
@@ -169,7 +177,7 @@ const ChatView: React.FC<Props> = ({
                     }}>
                         Your Current Task
                     </p>
-                    Your current task is "{task.text}"
+                    Your current task is "{task.text?.slice(0, 100)}..."
                 </Box>
             : (
                 <Box sx={{

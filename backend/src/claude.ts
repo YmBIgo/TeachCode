@@ -76,7 +76,7 @@ export class AnthropicHandler {
             console.error(error)
             this.attemptCount += 1
             if (this.attemptCount > 3) throw new Error("fail to get api response")
-            return this.createIntentMessage(systemPrompt, code)
+            return this.createAccuracyCheckMessage(systemPrompt, code)
         }
     }
     getModel(): string {

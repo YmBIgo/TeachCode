@@ -348,20 +348,28 @@ export class TeachCode {
         if (diffQuestionCount > MAX_QUESTION_COUNT)
           diffQuestionCount = MAX_QUESTION_COUNT;
         diffAddedLines.sort(() => 0.5 - Math.random());
-        let selectedAddedLines = Array.from(new Set(diffAddedLines.slice(0, diffQuestionCount)));
-		if (selectedAddedLines.length !== diffQuestionCount) {
-			const uniqDiff = diffQuestionCount - selectedAddedLines.length
-			selectedAddedLines = [...selectedAddedLines, ...diffAddedLines.slice(diffQuestionCount, diffQuestionCount + uniqDiff)]
-		}
+        let selectedAddedLines = Array.from(
+          new Set(diffAddedLines.slice(0, diffQuestionCount))
+        );
+        if (selectedAddedLines.length !== diffQuestionCount) {
+          const uniqDiff = diffQuestionCount - selectedAddedLines.length;
+          selectedAddedLines = [
+            ...selectedAddedLines,
+            ...diffAddedLines.slice(
+              diffQuestionCount,
+              diffQuestionCount + uniqDiff
+            ),
+          ];
+        }
         const newFileLines = newContent.split("\n");
         let codeLine = 0;
-		let uniqNflArray: string[] = []
+        let uniqNflArray: string[] = [];
         const promises = newFileLines.map(async (nfl) => {
           codeLine += 1;
           if (!selectedAddedLines.includes(nfl)) return nfl;
           if (nfl === "") return nfl;
-		  if (uniqNflArray.includes(nfl)) return nfl
-		  uniqNflArray.push(nfl)
+          if (uniqNflArray.includes(nfl)) return nfl;
+          uniqNflArray.push(nfl);
           let intent = "";
           try {
             const response = await this.apiHandler.createIntentMessage(
@@ -403,7 +411,7 @@ export class TeachCode {
         const maskedDiffRepresentation = diffRepresentation
           .split("\n")
           .map((d) => {
-            if (!selectedAddedLines.includes(d.slice(0))) return d;
+            if (!selectedAddedLines.includes(d.slice(1))) return d;
             return "+" + "-".repeat(d.length - 1);
           })
           .join("\n");
@@ -426,7 +434,7 @@ export class TeachCode {
         await fs.writeFile(maskedFilePath, maskedNewFile);
         const { askResponse } = await this.askSocket(
           JSON.stringify(askWriteFileContent),
-          "tool"
+          "check_accuracy"
         );
         if (askResponse !== "yesButtonClicked") {
           return "The user denied this operation";
@@ -469,18 +477,26 @@ ${fixedFile}`;
         if (diffQuestionCount > MAX_QUESTION_COUNT)
           diffQuestionCount = MAX_QUESTION_COUNT;
         splitNewContent.sort(() => 0.5 - Math.random());
-		let selectedMaskedLine = Array.from(new Set(splitNewContent.slice(0, diffQuestionCount)));
-		if (selectedMaskedLine.length !== diffQuestionCount) {
-			const uniqDiff = diffQuestionCount - selectedMaskedLine.length
-			selectedMaskedLine = [...selectedMaskedLine, ...splitNewContent.slice(diffQuestionCount, diffQuestionCount + uniqDiff)]
-		}
-		let uniqNflArray: string[] = []
+        let selectedMaskedLine = Array.from(
+          new Set(splitNewContent.slice(0, diffQuestionCount))
+        );
+        if (selectedMaskedLine.length !== diffQuestionCount) {
+          const uniqDiff = diffQuestionCount - selectedMaskedLine.length;
+          selectedMaskedLine = [
+            ...selectedMaskedLine,
+            ...splitNewContent.slice(
+              diffQuestionCount,
+              diffQuestionCount + uniqDiff
+            ),
+          ];
+        }
+        let uniqNflArray: string[] = [];
         const promises = newContent.split("\n").map(async (nfl) => {
           codeLine += 1;
           if (!selectedMaskedLine.includes(nfl)) return nfl;
-		  if (nfl === "") return nfl
-		  if (uniqNflArray.includes(nfl)) return nfl
-		  uniqNflArray.push(nfl)
+          if (nfl === "") return nfl;
+          if (uniqNflArray.includes(nfl)) return nfl;
+          uniqNflArray.push(nfl);
           let intent = "";
           try {
             const response = await this.apiHandler.createIntentMessage(
@@ -508,7 +524,7 @@ ${fixedFile}`;
           const maskedLine =
             beforeComment + intent + afterComment + "\n" + questionCode;
           codeLine += 1;
-		  // may be we don't have to remember questionMap
+          // may be we don't have to remember questionMap
           this.questionMap[questionId] = {
             questionCode,
             codeLine,
@@ -538,7 +554,7 @@ ${fixedFile}`;
         await fs.writeFile(maskedFilePath, maskedNewFile);
         const { askResponse } = await this.askSocket(
           JSON.stringify(askNewFileContent),
-          "tool"
+          "check_accuracy"
         );
         if (askResponse !== "yesButtonClicked") {
           return "The user denied this operation";
@@ -631,7 +647,7 @@ ${fixedFile}`;
       const entries = await globby("*", options);
       const result = entries.join("\n");
       const listFileResult = {
-        type: "listFile",
+        tool: "listFile",
         dirPath,
         content: result,
       };
@@ -657,7 +673,7 @@ ${fixedFile}`;
     returnEmptyStringOnSuccess: boolean = false
   ) {
     const askCommandRequest = {
-      type: "executeCommand",
+      tool: "executeCommand",
       command,
     };
     const { askResponse, text } = await this.askSocket(
@@ -693,7 +709,7 @@ ${fixedFile}`;
   }
   async askFollowupQuestion(question: string): Promise<string> {
     const followupResult = {
-      type: "followup",
+      tool: "followup",
       question,
     };
     const { text } = await this.askSocket(
@@ -715,7 +731,7 @@ ${fixedFile}`;
       resultToSend = "";
     }
     const attemptCompletionResult = {
-      type: "attempt_result",
+      tool: "attempt_result",
       result: resultToSend,
     };
     const { askResponse, text } = await this.askSocket(

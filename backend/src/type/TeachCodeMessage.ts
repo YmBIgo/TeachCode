@@ -25,7 +25,8 @@ export type ClaudeAsk =
     "completion_result" |
     "tool" |
     "followup" |
-    "request_limit_reached"
+    "request_limit_reached" |
+    "check_accuracy"
 
 export type ClaudeSay =
     "task" |
