@@ -34,7 +34,8 @@ export type ClaudeSay =
     "completion_result" |
     "text" |
     "command_output" |
-    "show_answer"
+    "show_answer" |
+    "stat"
 
 export type ClaudeMessage = {
     time: number;

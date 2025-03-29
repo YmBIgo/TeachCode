@@ -33,6 +33,7 @@ function App() {
           setAskMessage(parsedMessage?.content.slice(0, 100) || "")
           break
         case "say":
+          if (parsedMessage?.say === "stat") return
           setSayMessage(parsedMessage?.content.slice(0, 100) || "")
           break
         case "state":

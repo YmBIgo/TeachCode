@@ -254,6 +254,8 @@ export class TeachCode {
   private sendState: (messages: ClaudeMessage[]) => void;
   private history: Anthropic.MessageParam[];
   private requestCount: number;
+  totalInputTokens: number;
+  totalOutputTokens;
   askResponse?: ClaudeAskResponse;
   askResponseText?: string;
   questionMap: { [key: string]: TeachCodeQuestion };
@@ -294,6 +296,8 @@ export class TeachCode {
     this.requestCount = 0;
     this.systemPrompt = SYSTEM_PROMPT(this.workingDirectory);
     this.questionMap = {};
+    this.totalInputTokens = 0;
+    this.totalOutputTokens = 0;
   }
   async executeTool(toolName: ToolName, toolInput: any): Promise<string> {
     switch (toolName) {
@@ -379,6 +383,16 @@ export class TeachCode {
             intent = response.content
               .map((c) => (c.type === "text" ? c.text : ""))
               .join(", ");
+            this.totalInputTokens += response.usage.input_tokens
+            this.totalOutputTokens += response.usage.output_tokens
+            this.saySocket(
+              JSON.stringify({
+                text: `Total Input Token Count ${this.totalInputTokens} / Output Token Count ${this.totalOutputTokens}`,
+                inputTokenCount: this.totalInputTokens,
+                outputTokenCount: this.totalOutputTokens
+              }),
+              "stat"
+            )
           } catch (e) {
             console.error(e);
             return nfl;
@@ -454,15 +468,25 @@ ${fixedFile}`;
           ACCURACY_CHECK_SYSTEM_PROMPT,
           accuracyCheckPrompt
         );
+        this.totalInputTokens += response.usage.input_tokens
+        this.totalOutputTokens += response.usage.output_tokens
+        this.saySocket(
+          JSON.stringify({
+            text: `Total Input Token Count ${this.totalInputTokens} / Output Token Count ${this.totalOutputTokens}`,
+            inputTokenCount: this.totalInputTokens,
+            outputTokenCount: this.totalOutputTokens
+          }),
+          "stat"
+        )
         const splitResponse = response.content
           .map((c) => (c.type === "text" ? c.text : ""))
           .join(" ")
-          .split(".");
+          .split(",");
         this.saySocket(
           JSON.stringify({
-            answer: `Accuracy of your code is ${
+            answer: `Accuracy of your code is "${
               splitResponse[0]
-            } and reason is ${splitResponse?.[1] || "unknown"}`,
+            }" and reason is ${splitResponse?.slice(1).join(",") || "unknown"}`,
           }),
           "show_answer"
         );
@@ -506,6 +530,16 @@ ${fixedFile}`;
             intent = response.content
               .map((c) => (c.type === "text" ? c.text : ""))
               .join(", ");
+            this.totalInputTokens += response.usage.input_tokens
+            this.totalOutputTokens += response.usage.output_tokens
+            this.saySocket(
+              JSON.stringify({
+                text: `Total Input Token Count ${this.totalInputTokens} / Output Token Count ${this.totalOutputTokens}`,
+                inputTokenCount: this.totalInputTokens,
+                outputTokenCount: this.totalOutputTokens
+              }),
+              "stat"
+            )
           } catch (e) {
             console.error(e);
             return nfl;
@@ -574,15 +608,25 @@ ${fixedFile}`;
           ACCURACY_CHECK_SYSTEM_PROMPT,
           accuracyCheckPrompt
         );
+        this.totalInputTokens += response.usage.input_tokens
+        this.totalOutputTokens += response.usage.output_tokens
+        this.saySocket(
+          JSON.stringify({
+            text: `Total Input Token Count ${this.totalInputTokens} / Output Token Count ${this.totalOutputTokens}`,
+            inputTokenCount: this.totalInputTokens,
+            outputTokenCount: this.totalOutputTokens
+          }),
+          "stat"
+        )
         const splitResponse = response.content
           .map((c) => (c.type === "text" ? c.text : ""))
           .join(" ")
-          .split(".");
+          .split(",");
         this.saySocket(
           JSON.stringify({
             answer: `Accuracy of your code is ${
               splitResponse[0]
-            } and reason is ${splitResponse?.[1] || "unknown"}`,
+            } and reason is ${splitResponse?.slice(1).join(",") || "unknown"}`,
           }),
           "show_answer"
         );
@@ -602,18 +646,18 @@ ${fixedFile}`;
   async readFile(filePath: string): Promise<string> {
     try {
       const content = await fs.readFile(filePath, "utf-8");
-      const readFileResult = {
-        tool: "readFile",
-        filePath,
-        content: `${content.slice(0, 100)}`,
-      };
-      const { askResponse } = await this.askSocket(
-        JSON.stringify(readFileResult),
-        "tool"
-      );
-      if (askResponse !== "yesButtonClicked") {
-        return "The user denied this operation";
-      }
+      // const readFileResult = {
+      //   tool: "readFile",
+      //   filePath,
+      //   content: `${content.slice(0, 100)}`,
+      // };
+      // const { askResponse } = await this.askSocket(
+      //   JSON.stringify(readFileResult),
+      //   "tool"
+      // );
+      // if (askResponse !== "yesButtonClicked") {
+      //   return "The user denied this operation";
+      // }
       return content;
     } catch (error) {
       console.error(error);
@@ -646,18 +690,24 @@ ${fixedFile}`;
       };
       const entries = await globby("*", options);
       const result = entries.join("\n");
-      const listFileResult = {
-        tool: "listFile",
-        dirPath,
-        content: result,
-      };
-      const { askResponse, text } = await this.askSocket(
-        JSON.stringify(listFileResult),
-        "tool"
-      );
-      if (askResponse !== "yesButtonClicked") {
-        return "The user denied this operation.";
-      }
+      // this.saySocket(
+      //   JSON.stringify({
+      //     text: `Read the folder structure... \n ${result}`,
+      //   }),
+      //   "text"
+      // )
+      // const listFileResult = {
+      //   tool: "listFile",
+      //   dirPath,
+      //   content: result,
+      // };
+      // const { askResponse, text } = await this.askSocket(
+      //   JSON.stringify(listFileResult),
+      //   "tool"
+      // );
+      // if (askResponse !== "yesButtonClicked") {
+      //   return "The user denied this operation.";
+      // }
       return result;
     } catch (e) {
       console.error(e);
@@ -748,24 +798,40 @@ ${fixedFile}`;
       JSON.stringify({ task: `Starting task "${task}"...` }),
       "task"
     );
+    this.saySocket(
+      JSON.stringify({ task: "Checking the folder structure..." }),
+      "text"
+    )
+    this.executeTool("list_files", {
+      path: this.workingDirectory
+    })
     let userPrompt = `Task: \"${task}\"`;
-    let totalInputTokens = 0;
-    let totalOutputTokens = 0;
+    let totalInputTokens2 = 0;
+    let totalOutputTokens2 = 0;
     while (this.requestCount < MAX_REQUEST_COUNT_PER_TASK) {
       const { didEndLoop, inputTokenCount, outputTokenCount } =
         await this.recursivelyMakeClaudeRequests([
           { type: "text", text: userPrompt },
         ]);
-      totalInputTokens += inputTokenCount;
-      totalOutputTokens += outputTokenCount;
+      totalInputTokens2 += inputTokenCount;
+      totalOutputTokens2 += outputTokenCount;
+      this.saySocket(
+        JSON.stringify({
+          text: `Total statistic : Input Token Count ${totalInputTokens2} / Output Token Count ${totalOutputTokens2}`,
+          inputTokenCount: totalInputTokens2,
+          outputTokenCount: totalOutputTokens2
+        }),
+        "stat"
+      )
       if (didEndLoop) break;
-      else
-        userPrompt = `Ask yourself if you have completed the user's task. If you have, use the attempt_completion tool, otherwise proceed to the next step. (This is an automated message, so do not respond to it conversationally. Just proceed with the task.)`;
+      else userPrompt = `Ask yourself if you have completed the user's task. If you have, use the attempt_completion tool, otherwise proceed to the next step. (This is an automated message, so do not respond to it conversationally. Just proceed with the task.)`;
     }
   }
   async clearTask() {
     this.claudeMessages = undefined;
     this.history = [];
+    this.totalInputTokens = 0;
+    this.totalOutputTokens = 0;
   }
   async recursivelyMakeClaudeRequests(
     userContent: Array<
@@ -811,11 +877,15 @@ ${fixedFile}`;
       this.requestCount += 1;
       let inputTokenCount = response.usage.input_tokens;
       let outputTokenCount = response.usage.output_tokens;
+      this.totalInputTokens += inputTokenCount
+      this.totalOutputTokens += outputTokenCount
       let assistantResponses: Anthropic.Messages.ContentBlock[] = [];
       const sayTokenCount = JSON.stringify({
-        text: `Input Token Count : ${inputTokenCount} / Output Token Count : ${outputTokenCount}`,
+        text: `Current task statistic : Input Token Count : ${inputTokenCount} / Output Token Count : ${outputTokenCount}`,
+        inputTokenCount: this.totalInputTokens,
+        outputTokenCount: this.totalOutputTokens
       });
-      this.saySocket(sayTokenCount, "text");
+      this.saySocket(sayTokenCount, "stat");
       //
       for (let contentBlock of response.content) {
         if (contentBlock.type !== "text") continue;

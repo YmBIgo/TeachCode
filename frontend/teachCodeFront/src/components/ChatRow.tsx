@@ -266,6 +266,20 @@ const ChatRow: React.FC<Props> = ({ message }) => {
               {parsedMessageText()?.answer}
             </Box>
           );
+        case "stat":
+          return (
+            <></>
+            // <Box
+            //   sx={{
+            //     padding: "10px",
+            //     border: "1px solid black",
+            //     margin: "10px",
+            //     backgroundColor: "white",
+            //   }}
+            // >
+            //   {parsedMessageText()?.text}
+            // </Box>
+          )
         default:
           return (
             <Box

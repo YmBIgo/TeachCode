@@ -2,6 +2,7 @@ import { RefObject, useEffect, useState } from "react"
 import { ClaudeAsk, ClaudeMessage } from "../type/ClaudeMessage"
 import { Box, Button, TextareaAutosize } from "@mui/material"
 import ChatRow from "./ChatRow"
+import { floorTokenCount } from "../utils/token"
 
 type Props = {
     wsRef: RefObject<WebSocket | null>
@@ -17,6 +18,8 @@ const ChatView: React.FC<Props> = ({
     const [secondaryButtonText, setSecondaryButtonText] = useState<string>("")
     const [textAreaDisabled, setTextAreaDisabled] = useState<boolean>(false)
     const [inputValue, setInputValue] = useState("")
+    const [inputTokens, setInputTokens] = useState(0)
+    const [outputTokens, setOutputTokens] = useState(0)
     const task = messages.length ? messages[0] : undefined
 
     const handleOnKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -47,6 +50,7 @@ const ChatView: React.FC<Props> = ({
             type: "askResponse",
             askResponse: "yesButtonClicked"
         }
+        console.log("primary button clicked with : ", claudeAsk)
         switch(claudeAsk){
             case "command":
             case "tool":
@@ -137,6 +141,17 @@ const ChatView: React.FC<Props> = ({
                             break
                         case "completion_result":
                             break
+                        case "stat":
+                            try {
+                                const parsedMessage = JSON.parse(lastMessage?.text || "{}")
+                                const inputTokenCount = Number(parsedMessage.inputTokenCount)
+                                const outputTokenCount = Number(parsedMessage.outputTokenCount)
+                                if (!isNaN(inputTokenCount)) setInputTokens((prev) => prev += inputTokenCount)
+                                if (!isNaN(outputTokenCount)) setOutputTokens((prev) => prev += outputTokenCount)
+                            } catch(e) {
+                                console.error(e)
+                            }
+                            break
                     }
             }
         }
@@ -178,6 +193,8 @@ const ChatView: React.FC<Props> = ({
                         Your Current Task
                     </p>
                     Your current task is "{task.text?.slice(0, 100)}..."
+                    <hr/>
+                    <p>InputToken: {floorTokenCount(inputTokens)} / OutputToken : {floorTokenCount(outputTokens)}</p>
                 </Box>
             : (
                 <Box sx={{
